@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Umbra — a knowledge gap explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08090A; --panel:#0C0E10;
+    --ink:#E8E6E0; --dim:#6A6E73; --dimmer:#3A3D42;
+    --line:#1C1E21; --line-2:#2A2C2F;
+    --green:#7FFF9B; --amber:#FFB547; --red:#FF6B5E;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Berkeley Mono','JetBrains Mono',ui-monospace,monospace;
+    font-size:13px; line-height:1.5; overflow:hidden; -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background-image:radial-gradient(circle, #131518 1px, transparent 1px);
+    background-size:34px 34px; opacity:.4;
+  }
+  .scanline{
+    position:fixed; left:0; right:0; height:150px; z-index:60; pointer-events:none;
+    background:linear-gradient(180deg,transparent,rgba(127,255,155,.03) 48%,rgba(127,255,155,.055) 50%,rgba(127,255,155,.03) 52%,transparent);
+    animation:sweep 8.5s linear infinite;
+  }
+  @keyframes sweep{0%{transform:translateY(-150px)}100%{transform:translateY(100vh)}}
+  .app{position:relative; z-index:1; height:100%; display:flex; flex-direction:column}
+
+  .topbar{display:flex; align-items:center; justify-content:space-between;
+    padding:11px 18px; border-bottom:1px solid var(--line); font-size:11px}
+  .brand{display:flex; align-items:center; gap:9px; letter-spacing:.18em}
+  .brand b{font-weight:700}
+  .brand .tag{color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 8px var(--green); animation:breathe 3.4s ease-in-out infinite}
+  @keyframes breathe{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+  .topbar .right{color:var(--dim); letter-spacing:.16em}
+
+  .telemetry{display:flex; align-items:center; gap:24px; padding:8px 18px;
+    border-bottom:1px solid var(--line); font-size:10.5px; color:var(--dim)}
+  .read{display:flex; align-items:baseline; gap:7px}
+  .read .k{letter-spacing:.14em}
+  .read .v{color:var(--ink); letter-spacing:.06em}
+  .read .v.green{color:var(--green)} .read .v.amber{color:var(--amber)}
+  .spacer{flex:1}
+  .status-pill{border:1px solid var(--line-2); padding:3px 9px; letter-spacing:.14em; color:var(--green); font-size:10px}
+
+  main{position:relative; flex:1; overflow:hidden}
+  #graph{width:100%; height:100%; display:block; cursor:grab}
+  #graph.panning{cursor:grabbing}
+
+  .edge{stroke:var(--line-2); stroke-width:1.1}
+  .tether{stroke:var(--dimmer); stroke-width:1; stroke-dasharray:2 5; opacity:.55}
+  .tether.hot{stroke:rgba(255,181,71,.75); opacity:1}
+  .tether.greenh{stroke:rgba(127,255,155,.6); opacity:1}
+
+  /* spoke */
+  .spoke-line{stroke:var(--line-2); stroke-width:1; stroke-dasharray:2 4; opacity:.5}
+  .spoke{cursor:pointer}
+  .spoke .snub{fill:#16181b; stroke:var(--dimmer); stroke-width:1; stroke-dasharray:2 3}
+  .spoke .score{fill:var(--dimmer)}
+  .spoke .slabel{fill:var(--dim); font-size:8.5px; text-anchor:middle; letter-spacing:.04em; pointer-events:none}
+  .spoke .ssub{fill:var(--dimmer); font-size:6.8px; text-anchor:middle; letter-spacing:.12em; pointer-events:none}
+  .spoke:hover .snub{stroke:var(--green); filter:drop-shadow(0 0 7px rgba(127,255,155,.55))}
+  .spoke:hover .score{fill:var(--green)}
+  .spoke:hover .slabel{fill:var(--ink)}
+  .spoke.live .snub{stroke:var(--green); stroke-dasharray:none}
+  .spoke.live .score{fill:var(--green)}
+  .spoke.live .slabel{fill:var(--ink)}
+  .spoke.live .spulse{fill:none; stroke:var(--green); opacity:0; animation:sp 3s ease-out infinite}
+  @keyframes sp{0%{opacity:.45;r:8}75%{opacity:0;r:22}100%{opacity:0}}
+
+  /* bubble */
+  .bub{cursor:pointer}
+  .bub .ring{fill:var(--panel); stroke:var(--dimmer); stroke-width:1.5}
+  .bub .core{fill:var(--dim)}
+  .bub.active .ring{stroke:var(--green); filter:drop-shadow(0 0 9px rgba(127,255,155,.4))}
+  .bub.active .core{fill:var(--green)}
+  .bub:hover .ring{stroke:var(--green)}
+  .bub.filled .ring{stroke:var(--green); stroke-dasharray:none}
+  .bub.filled .core{fill:var(--green)}
+  .bub .label{fill:var(--ink); font-size:11px; text-anchor:middle; letter-spacing:.03em; pointer-events:none}
+  .bub .sub{fill:var(--dim); font-size:7.6px; text-anchor:middle; letter-spacing:.14em; pointer-events:none}
+  .bub.seed .ring{stroke-width:1.8}
+
+  /* gap */
+  .gap{cursor:pointer}
+  .gap .gring{fill:rgba(255,181,71,.05); stroke:var(--amber); stroke-width:1.3; stroke-dasharray:3 4}
+  .gap .gq{fill:var(--amber); font-size:15px; font-weight:700; text-anchor:middle; pointer-events:none}
+  .gap.open .gring{animation:gpulse 2.6s ease-in-out infinite}
+  @keyframes gpulse{0%,100%{opacity:.55}50%{opacity:1}}
+  .gap:hover .gring{opacity:1; filter:drop-shadow(0 0 8px rgba(255,181,71,.5))}
+  .gap.verified .gring{stroke:var(--green); stroke-dasharray:none; animation:none; opacity:1}
+  .gap.verified .gq{fill:var(--green)}
+  .gap.flagged .gring{stroke:var(--red); animation:none; opacity:1}
+  .gap.flagged .gq{fill:var(--red)}
+  .gap.honing .gring{stroke:var(--green); stroke-dasharray:5 4; animation:spin 1.5s linear infinite; opacity:1}
+  @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .gap.honing .gq{fill:var(--green)}
+
+  /* caption */
+  .cap rect{fill:rgba(12,14,16,.94); stroke:var(--line-2); stroke-width:1}
+  .cap .ck{fill:var(--green); font-size:7.5px; letter-spacing:.2em}
+  .cap text{fill:var(--ink); font-size:9.5px; text-anchor:middle; letter-spacing:.02em}
+
+  .spawn{transform-box:fill-box; transform-origin:center; animation:bloom .5s cubic-bezier(.2,.8,.2,1)}
+  @keyframes bloom{from{opacity:0;transform:scale(0)}to{opacity:1;transform:scale(1)}}
+  .precip{transform-box:fill-box; transform-origin:center; animation:precip .65s cubic-bezier(.2,.8,.2,1)}
+  @keyframes precip{0%{opacity:0;transform:scale(0)}60%{opacity:1;transform:scale(1.25)}100%{transform:scale(1)}}
+
+  .hint{position:absolute; left:50%; bottom:20px; transform:translateX(-50%);
+    color:var(--dim); font-size:10px; letter-spacing:.1em;
+    border:1px solid var(--line); padding:6px 14px; background:rgba(8,9,10,.82); transition:opacity .5s}
+  .hint b{color:var(--green); font-weight:500} .hint .x{color:var(--amber)}
+  .legend{position:absolute; left:16px; top:14px; font-size:9.5px; color:var(--dim);
+    letter-spacing:.07em; display:flex; flex-direction:column; gap:6px;
+    background:rgba(8,9,10,.72); border:1px solid var(--line); padding:9px 11px}
+  .legend .row{display:flex; align-items:center; gap:8px}
+  .legend .gl{width:16px; text-align:center; flex:0 0 16px}
+
+  /* inspector */
+  .inspector{position:absolute; top:0; right:0; bottom:0; width:374px;
+    background:var(--panel); border-left:1px solid var(--line-2);
+    transform:translateX(100%); transition:transform .32s cubic-bezier(.2,.7,.2,1);
+    display:flex; flex-direction:column; z-index:40}
+  .inspector.open{transform:translateX(0)}
+  .insp-head{display:flex; align-items:center; justify-content:space-between;
+    padding:13px 16px; border-bottom:1px solid var(--line)}
+  .insp-head .t{font-size:10.5px; letter-spacing:.18em; color:var(--green)}
+  .insp-x{background:transparent; border:1px solid var(--line-2); color:var(--dim);
+    width:22px; height:22px; cursor:pointer; font-family:inherit; font-size:12px; transition:all .15s}
+  .insp-x:hover{border-color:var(--red); color:var(--red)}
+  .insp-body{padding:16px; overflow-y:auto; flex:1}
+  .gid{font-size:15px; letter-spacing:.1em; margin-bottom:3px}
+  .gtype{display:inline-block; font-size:9.5px; letter-spacing:.16em; padding:3px 8px;
+    border:1px solid var(--amber); color:var(--amber); margin-bottom:14px}
+  .gtype.verified{border-color:var(--green); color:var(--green)}
+  .gtype.flagged{border-color:var(--red); color:var(--red)}
+  .field{margin-bottom:15px}
+  .field .fk{font-size:9px; letter-spacing:.18em; color:var(--dim); margin-bottom:5px}
+  .field .fv{font-size:12px; line-height:1.55}
+  .field .fv.dimv{color:var(--dim); font-style:italic}
+  .bridge{display:flex; flex-direction:column; gap:3px}
+  .bridge span i{color:var(--green); font-style:normal; margin-right:6px}
+  .confbar{letter-spacing:2px; font-size:13px}
+  .confbar .on{color:var(--green)} .confbar .off{color:var(--dimmer)}
+  .lifecycle{display:flex; gap:4px; margin:4px 0 16px}
+  .lc{flex:1; text-align:center; font-size:8px; letter-spacing:.05em; padding:5px 2px;
+    border:1px solid var(--line); color:var(--dimmer)}
+  .lc.done{border-color:var(--line-2); color:var(--dim)}
+  .lc.now{border-color:var(--green); color:var(--green); box-shadow:0 0 12px rgba(127,255,155,.15)}
+  .actions{display:flex; flex-direction:column; gap:9px; margin-top:6px}
+  .btn{width:100%; padding:11px; background:transparent; cursor:pointer; font-family:inherit;
+    font-size:11px; letter-spacing:.14em; border:1px solid var(--green); color:var(--green); transition:all .15s}
+  .btn:hover:not(:disabled){background:rgba(127,255,155,.1); box-shadow:0 0 16px rgba(127,255,155,.15)}
+  .btn.amber{border-color:var(--amber); color:var(--amber)}
+  .btn.amber:hover:not(:disabled){background:rgba(255,181,71,.1)}
+  .btn.ghost{border-color:var(--line-2); color:var(--dimmer)}
+  .btn:disabled{border-color:var(--line-2); color:var(--dimmer); cursor:not-allowed}
+  .log{margin-top:14px; border-top:1px solid var(--line); padding-top:12px;
+    font-size:10.5px; color:var(--dim); line-height:1.7; min-height:18px}
+  .log .ln{opacity:0; animation:fadein .3s forwards}
+  .log .ln.g{color:var(--green)} .log .ln.a{color:var(--amber)}
+  @keyframes fadein{to{opacity:1}}
+  .insp-foot{padding:10px 16px; border-top:1px solid var(--line);
+    font-size:9px; letter-spacing:.1em; color:var(--dimmer)}
+
+  /* overlay */
+  .overlay{position:absolute; inset:0; z-index:80; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; transition:opacity .6s}
+  .overlay.gone{opacity:0; pointer-events:none}
+  .ov-mark{font-size:13px; letter-spacing:.5em; color:var(--green); margin-bottom:8px;
+    display:flex; align-items:center; gap:10px}
+  .ov-mark .dot{width:7px; height:7px}
+  .ov-tag{font-size:10px; letter-spacing:.22em; color:var(--dim); margin-bottom:54px; text-transform:uppercase}
+  .ov-prompt{font-size:11px; letter-spacing:.16em; color:var(--dim); margin-bottom:16px; text-transform:uppercase}
+  .ov-maps{display:flex; flex-direction:column; gap:10px; width:560px; max-width:82vw}
+  .ov-map{text-align:left; background:transparent; border:1px solid var(--line-2);
+    padding:15px 18px; cursor:pointer; font-family:inherit; transition:all .15s}
+  .ov-map:hover{border-color:var(--dimmer)}
+  .ov-map.selected{border-color:var(--green); box-shadow:0 0 22px rgba(127,255,155,.1)}
+  .ov-map-t{font-size:15px; color:var(--ink); letter-spacing:.02em; margin-bottom:4px}
+  .ov-map.selected .ov-map-t{color:var(--green)}
+  .ov-map-s{font-size:9.5px; color:var(--dim); letter-spacing:.06em}
+  .ov-go{margin-top:34px; padding:13px 42px; background:transparent; border:1px solid var(--green);
+    color:var(--green); font-family:inherit; font-size:12px; letter-spacing:.2em; cursor:pointer; transition:all .15s}
+  .ov-go:hover{background:rgba(127,255,155,.1); box-shadow:0 0 24px rgba(127,255,155,.18)}
+  .ov-note{margin-top:22px; font-size:9px; letter-spacing:.1em; color:var(--dimmer); max-width:540px; text-align:center; line-height:1.7}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span><b>UMBRA</b><span class="tag">· a knowledge gap explorer</span></div>
+    <div class="right" id="sessionLbl">SESSION 0001</div>
+  </header>
+
+  <div class="telemetry">
+    <div class="read"><span class="k">T+</span><span class="v" id="tplus">00:00:00</span></div>
+    <div class="read"><span class="k">STATUS</span><span class="status-pill" id="status">STANDBY</span></div>
+    <div class="read"><span class="k">BUBBLES</span><span class="v" id="t-bub">0</span></div>
+    <div class="read"><span class="k">SPOKES</span><span class="v" id="t-spoke">0</span></div>
+    <div class="read"><span class="k">GAPS ?</span><span class="v amber" id="t-gap">0</span></div>
+    <div class="read"><span class="k">CLOSED</span><span class="v green" id="t-closed">0</span></div>
+    <div class="spacer"></div>
+    <div class="read"><span class="k">QUOTA</span><span class="v" id="t-quota">100%</span></div>
+    <div class="read"><span class="k">MODEL</span><span class="v">OPUS 4.7</span></div>
+  </div>
+
+  <main>
+    <svg id="graph" viewBox="0 0 1300 820" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <radialGradient id="glow">
+          <stop offset="0%" stop-color="#7FFF9B" stop-opacity="0.085"/>
+          <stop offset="55%" stop-color="#7FFF9B" stop-opacity="0.022"/>
+          <stop offset="100%" stop-color="#7FFF9B" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <g id="viewport">
+        <circle id="glow-c" r="340" fill="url(#glow)" opacity="0"></circle>
+        <g id="L-edges"></g>
+        <g id="L-spokelines"></g>
+        <g id="L-tethers"></g>
+        <g id="L-spokes"></g>
+        <g id="L-nodes"></g>
+        <g id="L-cap"></g>
+      </g>
+    </svg>
+
+    <div class="legend">
+      <div class="row"><span class="gl">●</span> topic · uncovered</div>
+      <div class="row"><span class="gl" style="color:var(--dimmer)">◦</span> spoke · tap to travel</div>
+      <div class="row"><span class="gl" style="color:var(--amber)">?</span> gap · tap to inspect</div>
+      <div class="row"><span class="gl" style="color:var(--green)">●</span> filled · gap closed</div>
+    </div>
+
+    <div class="hint" id="hint">tap a <span class="x">◦ spoke</span> to travel into it&nbsp;&nbsp;·&nbsp;&nbsp;gaps appear on their own between related topics</div>
+
+    <aside class="inspector" id="inspector">
+      <div class="insp-head"><span class="t">GAP INSPECTOR</span><button class="insp-x" id="inspX">✕</button></div>
+      <div class="insp-body" id="inspBody"></div>
+      <div class="insp-foot">UMBRA · negative-space analysis</div>
+    </aside>
+
+    <div class="overlay" id="overlay">
+      <div class="ov-mark"><span class="dot"></span>UMBRA</div>
+      <div class="ov-tag">a knowledge gap explorer</div>
+      <div class="ov-prompt">select a knowledge map to explore</div>
+      <div class="ov-maps" id="ovMaps">
+        <button class="ov-map selected" data-map="agent-trust">
+          <div class="ov-map-t">trust in AI agents</div>
+          <div class="ov-map-s">agent UX · HCI · human factors — 16 topics, 5 latent gaps</div>
+        </button>
+      </div>
+      <button class="ov-go" id="ovGo">▶&nbsp;&nbsp;ILLUMINATE</button>
+      <div class="ov-note">prototype note — this build ships with one hand-authored knowledge map. the full Umbra generates a map live from any question you ask; that engine is not wired into this prototype.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+const SVGNS="http://www.w3.org/2000/svg";
+const SPOKE_LEN=140, CX=650, CY=410;
+
+/* ================= KNOWLEDGE POOL ================= */
+const TOPICS={
+  t0:{label:'trust',sub:'IN AI AGENTS',seed:true,
+    summary:'Whether a person believes an agent will act in their interest — the hinge of every agentic product.',
+    spokes:['tcal','legib','rely','autom']},
+  tcal:{label:'trust',sub:'CALIBRATION',
+    summary:'Matching how much a user trusts an agent to how much it actually deserves — avoiding over- and under-trust.',
+    spokes:['cdisp','errec']},
+  legib:{label:'legibility',sub:'& TRANSPARENCY',
+    summary:'Whether a user can see what the agent is doing, and why it chose to do it.',
+    spokes:['toold','planv','mmod']},
+  rely:{label:'reliance',sub:'BEHAVIOUR',
+    summary:'What a user actually does. Trust is the attitude; reliance is the act — and the two diverge.',
+    spokes:['overr','errt']},
+  autom:{label:'automation',sub:'TRUST HISTORY',
+    summary:'Thirty years of human-factors research on trusting machines, now being ported to AI.',
+    spokes:['avhf']},
+  cdisp:{label:'confidence',sub:'DISPLAY',
+    summary:'How an agent signals its own certainty — percentages, hedges, visual cues.',
+    spokes:['onbd']},
+  onbd:{label:'onboarding',sub:'FIRST RUN',
+    summary:"The first interaction, where a user's mental model of the agent is set — often for good.",
+    spokes:['mmod']},
+  errec:{label:'error',sub:'RECOVERY',
+    summary:'How agent and user repair the relationship after the agent gets something wrong.',
+    spokes:['errt','control']},
+  toold:{label:'tool-use',sub:'DISCLOSURE',
+    summary:'Showing the user which tools and actions the agent is invoking on their behalf.',
+    spokes:['permm']},
+  planv:{label:'planning',sub:'VISIBILITY',
+    summary:'Surfacing the agent’s intended plan before it starts acting.',
+    spokes:['permm','control']},
+  mmod:{label:'mental',sub:'MODELS',
+    summary:'The working picture a user builds of how the agent thinks and decides.',
+    spokes:['onbd']},
+  overr:{label:'over-reliance',sub:'AUTOMATION BIAS',
+    summary:'When users defer to an agent further than its real competence warrants.',
+    spokes:['control']},
+  errt:{label:'error',sub:'TIMING',
+    summary:'Whether an agent errs early or late bends the entire trust trajectory.',
+    spokes:['errec']},
+  avhf:{label:'aviation',sub:'HUMAN FACTORS',
+    summary:'Cockpit automation research — mode confusion, automation surprise, complacency.',
+    spokes:['autom']},
+  permm:{label:'permission',sub:'MOMENTS',
+    summary:"The instant an agent pauses to ask the user 'may I?'",
+    spokes:['control']},
+  control:{label:'human',sub:'CONTROL & OVERRIDE',
+    summary:'Keeping the user able to stop, steer or reverse the agent at any point.',
+    spokes:['permm']},
+};
+
+const GAPS=[
+  {gid:'GAP-01',a:'tcal',b:'autom',type:'STALE',conf:5,
+   statement:'Trust-calibration theory was built on deterministic automation — autopilots: same input, same output. LLM agents are non-deterministic. Calibrating to a competence that varies run-to-run may be a category error.',
+   ka:'trust calibration',kb:'automation trust',
+   evidence:'The 30-year automation→AI longitudinal review ports the framework without once flagging the determinism assumption it rests on.',
+   fill:{label:'non-deterministic',sub:'TRUST'}},
+  {gid:'GAP-02',a:'tcal',b:'rely',type:'ASSUMPTION',conf:5,
+   statement:'Every design piece names "trust" as the design target. HCI knows subjective trust poorly predicts reliance — the actual behaviour. The field may be optimising the wrong variable.',
+   ka:'trust calibration',kb:'reliance behaviour',
+   evidence:'trust≠reliance appears only in HCI papers; 0 of the surveyed design pieces target reliance directly — a clean disconnect between two literatures.',
+   fill:{label:'reliance-first',sub:'DESIGN'}},
+  {gid:'GAP-03',a:'tcal',b:'onbd',type:'ADJACENCY',conf:3,
+   statement:'Trust calibration × first-run onboarding. Both well studied in isolation — the onboarding moment as a calibration design surface is uncrossed.',
+   ka:'trust calibration',kb:'onboarding / first run',
+   evidence:'HCI treats initial trust as a measured input variable; design pieces treat calibration as continuous. Neither crosses them.',
+   fill:{label:'onboarding',sub:'CALIBRATION'}},
+  {gid:'GAP-04',a:'rely',b:'errec',type:'ASSUMPTION',conf:4,
+   statement:'All trust work designs to build, maintain or recover trust. Appropriate reliance sometimes requires lowering it — when an agent is over-trusted vs. competence. Nobody designs the "trust me less" interaction.',
+   ka:'reliance behaviour',kb:'error recovery',
+   evidence:'All recovery work surveyed is restoration — raising trust back. 0 results on deliberate trust de-escalation as a designed interaction.',
+   fill:{label:'trust',sub:'DE-ESCALATION'}},
+  {gid:'GAP-05',a:'control',b:'avhf',type:'TRANSFER',conf:1,
+   statement:'Aviation human factors has precise failure concepts — automation surprise, mode confusion, complacency. Trust ported to agent UX; these specific concepts may not have.',
+   ka:'human control',kb:'aviation human factors',
+   evidence:'⚠ Survey corpus did not reach aviation human-factors literature. Absence cannot be confirmed from the current scan.',
+   fill:null},
+];
+
+/* ================= STATE ================= */
+const N={};
+for(const id in TOPICS){
+  const t=TOPICS[id];
+  N[id]={id,label:t.label,sub:t.sub,summary:t.summary,spokes:t.spokes,seed:!!t.seed,
+         discovered:false,x:CX,y:CY,vx:0,vy:0,bornStep:0,outAngle:null,filled:false};
+}
+const gapByPair={};
+GAPS.forEach(g=>{ gapByPair[g.a+'|'+g.b]=g; gapByPair[g.b+'|'+g.a]=g; });
+const gapState={};            // gid -> {state, x, y}
+const frontier={};            // targetId -> {x,y}
+const view={tx:0,ty:0,scale:1};
+let step=0, activeId=null, quota=100, current=null, STATE_Q='how do AI agents earn user trust?';
+
+/* ================= SVG ================= */
+const svg=document.getElementById('graph'),vp=document.getElementById('viewport');
+const Ledges=document.getElementById('L-edges'),Lspokelines=document.getElementById('L-spokelines');
+const Ltethers=document.getElementById('L-tethers'),Lspokes=document.getElementById('L-spokes');
+const Lnodes=document.getElementById('L-nodes'),Lcap=document.getElementById('L-cap');
+const glowC=document.getElementById('glow-c');
+const dom={bub:{},edge:{},spoke:{},spokeline:{},nub:{},gap:{},tether:{}};
+let capG=null;
+
+function el(t,a){const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+function radius(n){return n.seed?24:(n.filled?17:13+(n.label.length>9?5:3)*1.5);}
+function pairKey(a,b){return a<b?a+'|'+b:b+'|'+a;}
+
+/* ---- bubble ---- */
+function buildBubble(n,animate){
+  if(dom.bub[n.id])return;
+  const g=el('g',{class:'bub'+(n.seed?' seed':'')+(n.filled?' filled':''),'data-bub':n.id});
+  const inner=el('g',{});
+  const r=radius(n);
+  inner.appendChild(el('circle',{class:'ring',r:r}));
+  inner.appendChild(el('circle',{class:'core',r:Math.max(2.6,r*0.16)}));
+  const lab=el('text',{class:'label',y:r+15});lab.textContent=n.label;inner.appendChild(lab);
+  if(n.sub){const s=el('text',{class:'sub',y:r+26});s.textContent=n.sub;inner.appendChild(s);}
+  g.appendChild(inner);
+  Lnodes.appendChild(g);
+  dom.bub[n.id]=g;
+  if(animate)inner.classList.add('spawn');
+  g.addEventListener('click',()=>{ if(!dragged) setActive(n.id); });
+}
+
+/* ---- spoke (line + nub + label) ---- */
+function buildNub(tid){
+  if(dom.nub[tid])return;
+  const g=el('g',{class:'spoke','data-nub':tid});
+  g.appendChild(el('circle',{class:'spulse',r:8}));
+  g.appendChild(el('circle',{class:'snub',r:8}));
+  g.appendChild(el('circle',{class:'score',r:2.4}));
+  const t=TOPICS[tid];
+  const l=el('text',{class:'slabel',y:21});l.textContent=t.label;g.appendChild(l);
+  if(t.sub){const s=el('text',{class:'ssub',y:30});s.textContent=t.sub;g.appendChild(s);}
+  Lspokes.appendChild(g);
+  dom.nub[tid]=g;
+  g.addEventListener('click',e=>{ e.stopPropagation(); if(!dragged) travel(tid); });
+}
+function spokeLineKey(p,t){return p+'>'+t;}
+function buildSpokeLine(p,t){
+  const k=spokeLineKey(p,t);
+  if(dom.spokeline[k])return;
+  const line=el('line',{class:'spoke-line'});
+  Lspokelines.appendChild(line);
+  dom.spokeline[k]=line;
+}
+
+/* ---- edge ---- */
+function buildEdge(a,b){
+  const k=pairKey(a,b);
+  if(dom.edge[k])return;
+  Ledges.appendChild(dom.edge[k]=el('line',{class:'edge'}));
+}
+
+/* ---- gap ---- */
+function buildGap(g){
+  if(dom.gap[g.gid])return;
+  gapState[g.gid]={state:'open',x:CX,y:CY};
+  const grp=el('g',{class:'gap open','data-gap':g.gid});
+  const inner=el('g',{class:'precip'});
+  inner.appendChild(el('circle',{class:'gring',r:17}));
+  const q=el('text',{class:'gq',y:6});q.textContent='?';inner.appendChild(q);
+  grp.appendChild(inner);
+  Lnodes.appendChild(grp);
+  dom.gap[g.gid]=grp;
+  const t1=el('line',{class:'tether'}),t2=el('line',{class:'tether'});
+  Ltethers.appendChild(t1);Ltethers.appendChild(t2);
+  dom.tether[g.gid]=[t1,t2];
+  grp.addEventListener('click',()=>{ if(!dragged) inspectGap(g.gid); });
+  grp.addEventListener('pointerenter',()=>hotT(g.gid,true));
+  grp.addEventListener('pointerleave',()=>hotT(g.gid,false));
+}
+function hotT(gid,on){
+  const t=dom.tether[gid];if(!t)return;
+  const st=gapState[gid].state;
+  const cls=(st==='verified'||st==='honing')?'greenh':'hot';
+  t.forEach(x=>{x.classList.remove('hot','greenh');if(on)x.classList.add(cls);});
+}
+
+/* ================= DISCOVERY ================= */
+function travel(tid){
+  const n=N[tid];
+  if(n.discovered)return;
+  // find discovered parent(s) that lead here; place via spoke nub position
+  const f=frontier[tid];
+  n.x=f?f.x:CX; n.y=f?f.y:CY;
+  n.discovered=true;
+  n.bornStep=++step;
+  // outAngle = direction from nearest discovered parent
+  const par=parentsOf(tid)[0];
+  if(par) n.outAngle=Math.atan2(n.y-N[par].y,n.x-N[par].x);
+  buildBubble(n,true);
+  setStatus('SURVEYING','amber');
+  recompute();
+  setActive(tid);
+  dismissHint();
+  setTimeout(()=>setStatus('EXPLORING','green'),650);
+}
+function parentsOf(tid){
+  const out=[];
+  for(const id in N){
+    if(N[id].discovered && N[id].spokes.indexOf(tid)>=0) out.push(id);
+  }
+  return out;
+}
+
+/* rebuild edges / spokes / gaps from current discovered set */
+function recompute(){
+  // assign spoke-nub positions for each discovered bubble's undiscovered targets
+  for(const id in N){
+    const p=N[id];
+    if(!p.discovered)continue;
+    const tgts=p.spokes;
+    const n=tgts.length;
+    tgts.forEach((tid,i)=>{
+      if(N[tid].discovered)return;
+      if(frontier[tid])return;          // already positioned
+      let ang;
+      if(p.seed){ ang=(i/n)*Math.PI*2 - Math.PI/2; }
+      else {
+        const base=(p.outAngle==null)?0:p.outAngle;
+        const spread=Math.min(2.5,n*0.7);
+        ang=base+(i-(n-1)/2)*(n>1?spread/(n-1):0);
+      }
+      frontier[tid]={x:p.x+Math.cos(ang)*SPOKE_LEN, y:p.y+Math.sin(ang)*SPOKE_LEN};
+    });
+  }
+  // realise: edges + spokelines + nubs
+  const wantNub={}, wantLine={}, wantEdge={};
+  for(const id in N){
+    const p=N[id];
+    if(!p.discovered)continue;
+    p.spokes.forEach(tid=>{
+      if(N[tid].discovered){ wantEdge[pairKey(id,tid)]=[id,tid]; }
+      else { wantNub[tid]=1; wantLine[spokeLineKey(id,tid)]=[id,tid]; }
+    });
+  }
+  // build needed
+  for(const k in wantEdge){ buildEdge(wantEdge[k][0],wantEdge[k][1]); }
+  for(const tid in wantNub){ buildNub(tid); }
+  for(const k in wantLine){ buildSpokeLine(wantLine[k][0],wantLine[k][1]); }
+  // remove stale nubs / spokelines (targets now discovered)
+  for(const tid in dom.nub){ if(!wantNub[tid]){ dom.nub[tid].remove(); delete dom.nub[tid]; delete frontier[tid]; } }
+  for(const k in dom.spokeline){ if(!wantLine[k]){ dom.spokeline[k].remove(); delete dom.spokeline[k]; } }
+  // gaps
+  GAPS.forEach(g=>{
+    if(N[g.a].discovered && N[g.b].discovered) buildGap(g);
+  });
+  updateTelemetry();
+}
+
+function setActive(id){
+  if(!N[id]||!N[id].discovered)return;
+  activeId=id;
+  for(const bid in dom.bub) dom.bub[bid].classList.toggle('active',bid===id);
+  for(const tid in dom.nub){
+    const live=N[id].spokes.indexOf(tid)>=0;
+    dom.nub[tid].classList.toggle('live',live);
+  }
+  drawCaption();
+}
+
+function drawCaption(){
+  if(capG){ capG.remove(); capG=null; }
+  if(!activeId)return;
+  const n=N[activeId];
+  const g=el('g',{class:'cap'});
+  const lines=wrap(n.summary,40);
+  const w=Math.min(360,Math.max(160,Math.max(...lines.map(l=>l.length))*6.4+26));
+  const h=20+lines.length*13;
+  g.appendChild(el('rect',{x:-w/2,y:0,width:w,height:h}));
+  const k=el('text',{class:'ck',x:0,y:14});k.textContent=n.seed?'SEED TOPIC':'TOPIC';g.appendChild(k);
+  lines.forEach((ln,i)=>{const t=el('text',{x:0,y:31+i*13});t.textContent=ln;g.appendChild(t);});
+  Lcap.appendChild(g);
+  capG=g;
+}
+function wrap(s,n){
+  const w=s.split(' '),out=[];let cur='';
+  w.forEach(word=>{ if((cur+' '+word).trim().length>n){out.push(cur.trim());cur=word;} else cur+=' '+word; });
+  if(cur.trim())out.push(cur.trim());
+  return out.slice(0,4);
+}
+
+/* ================= FORCE ================= */
+function discList(){const a=[];for(const id in N)if(N[id].discovered)a.push(N[id]);return a;}
+function tick(){
+  const v=discList();
+  for(let i=0;i<v.length;i++){
+    const a=v[i];
+    for(let j=i+1;j<v.length;j++){
+      const b=v[j];
+      let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy;if(d2<1)d2=1;
+      const d=Math.sqrt(d2),f=30000/d2,fx=f*dx/d,fy=f*dy/d;
+      a.vx+=fx;a.vy+=fy;b.vx-=fx;b.vy-=fy;
+    }
+  }
+  for(const k in dom.edge){
+    const p=k.split('|');spring(N[p[0]],N[p[1]],158,0.03);
+  }
+  GAPS.forEach(g=>{
+    if(dom.gap[g.gid]&&gapState[g.gid].state!=='filled') spring(N[g.a],N[g.b],260,0.012);
+  });
+  v.forEach(n=>{
+    if(n.seed){ n.vx=0;n.vy=0; return; }
+    n.vx+=(CX-n.x)*0.0026; n.vy+=(CY-n.y)*0.0026;
+    n.vx*=0.83; n.vy*=0.83;
+    const sp=Math.hypot(n.vx,n.vy); if(sp>13){n.vx=n.vx/sp*13;n.vy=n.vy/sp*13;}
+    n.x+=n.vx; n.y+=n.vy;
+  });
+  GAPS.forEach(g=>{
+    if(!dom.gap[g.gid])return;
+    const gs=gapState[g.gid]; if(gs.state==='filled')return;
+    gs.x=(N[g.a].x+N[g.b].x)/2; gs.y=(N[g.a].y+N[g.b].y)/2;
+  });
+}
+function spring(a,b,rest,k){
+  if(!a||!b)return;
+  let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;
+  const f=(d-rest)*k,fx=f*dx/d,fy=f*dy/d;
+  if(!a.seed){a.vx+=fx;a.vy+=fy;}
+  if(!b.seed){b.vx-=fx;b.vy-=fy;}
+}
+
+/* ================= RENDER ================= */
+function render(){
+  for(const id in dom.bub){
+    const n=N[id];
+    const g=dom.bub[id];
+    g.setAttribute('transform',`translate(${n.x},${n.y})`);
+    g.style.opacity = (id===activeId||n.filled)?1:0.66;
+  }
+  for(const k in dom.edge){
+    const p=k.split('|'),a=N[p[0]],b=N[p[1]],line=dom.edge[k];
+    line.setAttribute('x1',a.x);line.setAttribute('y1',a.y);
+    line.setAttribute('x2',b.x);line.setAttribute('y2',b.y);
+  }
+  for(const tid in dom.nub){
+    const f=frontier[tid];if(!f)continue;
+    dom.nub[tid].setAttribute('transform',`translate(${f.x},${f.y})`);
+    dom.nub[tid].style.opacity = dom.nub[tid].classList.contains('live')?1:0.4;
+  }
+  for(const k in dom.spokeline){
+    const p=k.split('>'),from=N[p[0]],f=frontier[p[1]];
+    if(!f)continue;
+    const line=dom.spokeline[k];
+    line.setAttribute('x1',from.x);line.setAttribute('y1',from.y);
+    line.setAttribute('x2',f.x);line.setAttribute('y2',f.y);
+    line.style.opacity = (p[0]===activeId)?0.8:0.32;
+  }
+  GAPS.forEach(g=>{
+    const grp=dom.gap[g.gid];if(!grp)return;
+    const gs=gapState[g.gid];
+    if(gs.state==='filled'){grp.style.display='none';return;}
+    grp.setAttribute('transform',`translate(${gs.x},${gs.y})`);
+    const t=dom.tether[g.gid];
+    if(t){ seg(t[0],N[g.a],gs); seg(t[1],N[g.b],gs); }
+  });
+  if(activeId){
+    const n=N[activeId];
+    glowC.setAttribute('cx',n.x);glowC.setAttribute('cy',n.y);
+    glowC.setAttribute('opacity',1);
+    if(capG) capG.setAttribute('transform',`translate(${n.x},${n.y+radius(n)+34})`);
+  }
+}
+function seg(line,from,to){
+  line.setAttribute('x1',from.x);line.setAttribute('y1',from.y);
+  line.setAttribute('x2',to.x);line.setAttribute('y2',to.y);
+}
+function loop(){tick();render();requestAnimationFrame(loop);}
+loop();
+
+/* ================= PAN / ZOOM ================= */
+let dragged=false,panStart=null;
+svg.addEventListener('pointerdown',e=>{
+  dragged=false;
+  panStart={x:e.clientX,y:e.clientY,tx:view.tx,ty:view.ty};
+  svg.classList.add('panning');
+});
+svg.addEventListener('pointermove',e=>{
+  if(!panStart)return;
+  const dx=e.clientX-panStart.x,dy=e.clientY-panStart.y;
+  if(Math.hypot(dx,dy)>3)dragged=true;
+  const r=svg.getBoundingClientRect();
+  view.tx=panStart.tx+dx*(1300/r.width);
+  view.ty=panStart.ty+dy*(820/r.height);
+  applyView();
+});
+svg.addEventListener('pointerup',()=>{panStart=null;svg.classList.remove('panning');setTimeout(()=>dragged=false,0);});
+svg.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const r=svg.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*(1300/r.width),my=(e.clientY-r.top)*(820/r.height);
+  const old=view.scale;
+  view.scale=Math.min(2.4,Math.max(.5,view.scale*(e.deltaY<0?1.12:0.89)));
+  view.tx=mx-(mx-view.tx)*(view.scale/old);
+  view.ty=my-(my-view.ty)*(view.scale/old);
+  applyView();
+},{passive:false});
+function applyView(){vp.setAttribute('transform',`translate(${view.tx},${view.ty}) scale(${view.scale})`);}
+svg.addEventListener('click',e=>{if(!dragged&&(e.target===svg||e.target===vp||e.target===glowC))closeInspector();});
+
+/* ================= INSPECTOR ================= */
+const inspector=document.getElementById('inspector'),inspBody=document.getElementById('inspBody');
+document.getElementById('inspX').addEventListener('click',closeInspector);
+function closeInspector(){inspector.classList.remove('open');current=null;}
+
+function confBar(c){
+  let s='<span class="confbar">';
+  for(let i=0;i<5;i++)s+= i<c?'<span class="on">▓</span>':'<span class="off">░</span>';
+  const lbl=c<=1?'UNVERIFIED':c===2?'LOW':c===3?'MED':c===4?'MED-HIGH':'HIGH';
+  return s+`</span> <span style="font-size:9px;letter-spacing:.14em;color:var(--dim)">${lbl}</span>`;
+}
+function lifecycleHtml(state){
+  const steps=['OPEN','VERIFIED','HONED','FILLED'];
+  const order={open:0,verifying:0,flagged:0,verified:1,honing:2,filled:3};
+  const cur=order[state]??0;
+  return '<div class="lifecycle">'+steps.map((s,i)=>{
+    let c='lc';if(i<cur)c+=' done';if(i===cur&&state!=='flagged')c+=' now';
+    return `<div class="${c}">${s}</div>`;
+  }).join('')+'</div>';
+}
+function inspectGap(gid){
+  const g=GAPS.find(x=>x.gid===gid),gs=gapState[gid];
+  if(!gs)return;
+  current=gid;
+  const verified=['verified','honing','filled'].includes(gs.state),flagged=gs.state==='flagged';
+  const tcls=flagged?'flagged':verified?'verified':'';
+  let h='';
+  h+=`<div class="gid">${g.gid}</div><div class="gtype ${tcls}">${g.type}</div>`;
+  h+=lifecycleHtml(gs.state);
+  h+=`<div class="field"><div class="fk">BRIDGES</div><div class="bridge fv">
+      <span><i>A</i>${g.ka}</span><span><i>B</i>${g.kb}</span></div></div>`;
+  h+=`<div class="field"><div class="fk">STATEMENT</div><div class="fv">${g.statement}</div></div>`;
+  h+=`<div class="field"><div class="fk">EVIDENCE OF ABSENCE</div>`;
+  if(verified||flagged)h+=`<div class="fv" style="${flagged?'color:var(--red)':''}">${g.evidence}</div>`;
+  else h+=`<div class="fv dimv">— retrieval not yet run —</div>`;
+  h+=`</div><div class="field"><div class="fk">CONFIDENCE</div><div class="fv">${confBar(g.conf)}</div></div>`;
+  h+=`<div class="actions" id="acts"></div><div class="log" id="insplog"></div>`;
+  inspBody.innerHTML=h;
+  const acts=document.getElementById('acts');
+  if(gs.state==='open')acts.appendChild(mkBtn('▶  VERIFY GAP','',doVerify));
+  else if(gs.state==='verifying')acts.appendChild(dis(mkBtn('RETRIEVING…','',null)));
+  else if(gs.state==='verified'){
+    if(g.fill)acts.appendChild(mkBtn('HONE → DIRECTIVE','',doHone));
+    else acts.appendChild(dis(mkBtn('CANNOT HONE — UNVERIFIED','ghost',null)));
+  }
+  else if(gs.state==='flagged')acts.appendChild(dis(mkBtn('⚠  RE-SCAN WITH WIDER CORPUS','amber',null)));
+  else if(gs.state==='honing')acts.appendChild(dis(mkBtn('RESEARCHING…','',null)));
+  else if(gs.state==='filled'){const b=dis(mkBtn('✓  GAP CLOSED','',null));b.style.opacity=.7;acts.appendChild(b);}
+  inspector.classList.add('open');
+  dismissHint();
+}
+function mkBtn(label,extra,fn){
+  const b=document.createElement('button');
+  b.className='btn'+(extra?' '+extra:'');b.textContent=label;
+  if(fn)b.addEventListener('click',fn);
+  return b;
+}
+function dis(b){b.disabled=true;return b;}
+function logLine(text,cls){
+  const log=document.getElementById('insplog');if(!log)return;
+  const d=document.createElement('div');d.className='ln'+(cls?' '+cls:'');d.textContent=text;
+  log.appendChild(d);
+}
+
+function doVerify(){
+  const gid=current,gs=gapState[gid],g=GAPS.find(x=>x.gid===gid);
+  gs.state='verifying';syncGap(gid);setStatus('RETRIEVING','amber');inspectGap(gid);
+  const flagged=g.conf===1;
+  const lines=flagged
+    ?['> retrieving sources connecting A ↔ B…','> arxiv:cs.HC ✓   NN/g ✓','> aviation HF corpus … NOT REACHED','> absence cannot be confirmed']
+    :['> retrieving sources connecting A ↔ B…','> arxiv:cs.HC ✓   NN/g ✓   newsletters ✓','> scanning for any bridging work…','> 0 connecting sources — absence confirmed'];
+  let i=0;
+  const iv=setInterval(()=>{
+    logLine(lines[i],i===lines.length-1?(flagged?'a':'g'):'');
+    if(++i>=lines.length){
+      clearInterval(iv);spendQuota(2);
+      setTimeout(()=>{gs.state=flagged?'flagged':'verified';syncGap(gid);setStatus('EXPLORING','green');inspectGap(gid);},420);
+    }
+  },560);
+}
+function doHone(){
+  const gid=current,gs=gapState[gid];
+  gs.state='honing';syncGap(gid);setStatus('RESEARCHING','green');inspectGap(gid);
+  const lines=['> directive composed from gap','> transmitting to engine…','> turn 1 · scanning','> turn 2 · cross-referencing','> turn 3 · synthesising','> research returned — filling topic'];
+  let i=0;
+  const iv=setInterval(()=>{
+    logLine(lines[i],i>=lines.length-1?'g':'');
+    if(++i>=lines.length){
+      clearInterval(iv);spendQuota(6);
+      setTimeout(()=>{gs.state='filled';fillGap(gid);setStatus('EXPLORING','green');inspectGap(gid);},520);
+    }
+  },520);
+}
+function fillGap(gid){
+  const g=GAPS.find(x=>x.gid===gid),gs=gapState[gid];
+  const nid='f_'+gid;
+  N[nid]={id:nid,label:g.fill.label,sub:g.fill.sub,summary:'A direction opened by closing '+gid+'.',
+          spokes:[],discovered:true,x:gs.x,y:gs.y,vx:0,vy:0,bornStep:++step,outAngle:null,filled:true};
+  buildBubble(N[nid],true);
+  dom.bub[nid].classList.add('filled');
+  buildEdge(nid,g.a);buildEdge(nid,g.b);
+  if(dom.gap[gid]){dom.gap[gid].remove();delete dom.gap[gid];}
+  if(dom.tether[gid]){dom.tether[gid].forEach(x=>x.remove());delete dom.tether[gid];}
+  flash(N[nid]);
+  updateTelemetry();
+}
+function flash(n){
+  const ring=dom.bub[n.id].querySelector('.ring');
+  ring.animate([
+    {filter:'drop-shadow(0 0 0 rgba(127,255,155,0))'},
+    {filter:'drop-shadow(0 0 16px rgba(127,255,155,.9))'},
+    {filter:'drop-shadow(0 0 0 rgba(127,255,155,0))'}
+  ],{duration:950});
+}
+function syncGap(gid){if(dom.gap[gid])dom.gap[gid].setAttribute('class','gap '+gapState[gid].state);}
+
+/* ================= TELEMETRY ================= */
+function setStatus(t,c){
+  const s=document.getElementById('status');s.textContent=t;
+  s.style.color=c==='amber'?'var(--amber)':c==='green'?'var(--green)':'var(--ink)';
+}
+function updateTelemetry(){
+  document.getElementById('t-bub').textContent=discList().length;
+  document.getElementById('t-spoke').textContent=Object.keys(dom.nub).length;
+  let open=0,closed=0;
+  for(const k in gapState){ if(gapState[k].state==='filled')closed++; else open++; }
+  document.getElementById('t-gap').textContent=open;
+  document.getElementById('t-closed').textContent=closed;
+}
+function spendQuota(n){
+  quota=Math.max(0,quota-n);
+  const q=document.getElementById('t-quota');
+  q.textContent=quota+'%';
+  q.style.color=quota<25?'var(--red)':quota<55?'var(--amber)':'var(--ink)';
+}
+let tsec=0;
+setInterval(()=>{
+  tsec++;
+  const h=String(Math.floor(tsec/3600)).padStart(2,'0');
+  const m=String(Math.floor((tsec%3600)/60)).padStart(2,'0');
+  const s=String(tsec%60).padStart(2,'0');
+  document.getElementById('tplus').textContent=`${h}:${m}:${s}`;
+},1000);
+
+/* ================= HINT ================= */
+let hintGone=false;
+function dismissHint(){if(hintGone)return;hintGone=true;const h=document.getElementById('hint');h.style.opacity=0;setTimeout(()=>h.remove(),600);}
+
+/* ================= START ================= */
+const overlay=document.getElementById('overlay');
+document.getElementById('ovGo').addEventListener('click',begin);
+document.querySelectorAll('.ov-map').forEach(m=>{
+  m.addEventListener('click',()=>{
+    document.querySelectorAll('.ov-map').forEach(x=>x.classList.remove('selected'));
+    m.classList.add('selected');
+  });
+});
+function begin(){
+  overlay.classList.add('gone');
+  setStatus('SEEDING','amber');
+  N.t0.x=CX;N.t0.y=CY;N.t0.discovered=true;N.t0.bornStep=++step;
+  buildBubble(N.t0,true);
+  recompute();
+  setActive('t0');
+  setTimeout(()=>setStatus('EXPLORING','green'),900);
+}
+</script>
+</body>
+</html>
