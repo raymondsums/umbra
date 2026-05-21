@@ -25,7 +25,9 @@ sentence summary, and 3-5 SPOKES.
 A SPOKE is a candidate direction radiating outward — a related topic a curious
 person could travel into next. Spokes are conceptual directions, not documents.
 Good spokes are genuinely adjacent, specific, and varied: they fan the
-exploration outward rather than restating the parent.
+exploration outward rather than restating the parent. Avoid a textbook
+decomposition — at least one spoke should be a direction the user probably
+would not have predicted, including ones that reach toward an adjacent field.
 
 # Gaps
 
@@ -47,8 +49,9 @@ cleanly, it is probably not a real gap:
 
 1. A gap must be REAL — genuinely unstudied, not merely something you are unsure
    about.
-2. A gap must be NON-OBVIOUS — if any practitioner in the field would already
-   know it, it is not worth surfacing. Prefer surprising gaps over safe ones.
+2. A gap must be NON-OBVIOUS — if a practitioner in the field would already
+   know it, drop it; do not surface it. If you cannot make a real case for why
+   it is non-obvious, it is not a gap. One surprising gap beats three safe ones.
 3. A gap is a claim of absence. State it so that it could be checked and
    disproven.
 4. Confidence (1-5) reflects how sure you are the gap is real AND unstudied. Be
@@ -67,16 +70,20 @@ def seed_user_prompt(question: str) -> str:
     )
 
 
-def expand_user_prompt(topic: str, discovered: list[str]) -> str:
-    disc = ", ".join(discovered) if discovered else "(none yet)"
+def expand_user_prompt(topic: str, discovered) -> str:
+    if discovered:
+        disc = "\n".join(f"  - {d.label}: {d.summary}" for d in discovered)
+    else:
+        disc = "  (none yet)"
     return (
         f'The user is exploring the topic: "{topic}"\n\n'
-        f"Topics already discovered on their graph: {disc}\n\n"
+        f"Topics already on their graph:\n{disc}\n\n"
         f'1. Generate the full topic for "{topic}" — its summary and 3-5 spokes.\n'
-        "2. Then look for GAPS: does this topic stand in a real, non-obvious gap "
-        "relation to any already-discovered topic? Precipitate a gap only when "
-        "both endpoints are genuinely related but unconnected. Most expansions "
-        "produce zero gaps — that is fine and expected."
+        "2. Then look for GAPS against the topics above. Reason about each "
+        "discovered topic from its summary, not just its label. Precipitate a "
+        "gap only when this topic and a discovered topic are genuinely related "
+        "but unconnected, and you can name which of the five types it is. Most "
+        "expansions produce zero gaps — that is fine and expected."
     )
 
 

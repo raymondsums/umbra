@@ -74,10 +74,17 @@ class SeedRequest(BaseModel):
     question: str
 
 
+class DiscoveredTopic(BaseModel):
+    """A topic already on the user's graph — label plus summary, so the engine
+    can reconcile against it rather than guess from a bare label."""
+    label: str
+    summary: str
+
+
 class ExpandRequest(BaseModel):
     topic: str = Field(description="Label of the topic to expand")
-    discovered: list[str] = Field(
-        default_factory=list, description="Labels of topics already on the graph"
+    discovered: list[DiscoveredTopic] = Field(
+        default_factory=list, description="Topics already on the graph, with summaries"
     )
 
 

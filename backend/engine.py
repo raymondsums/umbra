@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 
 from anthropic import AsyncAnthropic
 
-from models import ExpandResult, Gap, SeedResult, VerifyResult
+from models import DiscoveredTopic, ExpandResult, Gap, SeedResult, VerifyResult
 from prompts import (
     ENGINE_SYSTEM,
     VERIFY_SYSTEM,
@@ -67,7 +67,9 @@ async def seed(question: str) -> AsyncIterator[tuple[str, dict]]:
     yield "done", {}
 
 
-async def expand(topic: str, discovered: list[str]) -> AsyncIterator[tuple[str, dict]]:
+async def expand(
+    topic: str, discovered: list[DiscoveredTopic]
+) -> AsyncIterator[tuple[str, dict]]:
     """Expand a topic into spokes, and precipitate any gaps against the graph."""
     yield "status", {"message": f"surveying {topic}"}
 
